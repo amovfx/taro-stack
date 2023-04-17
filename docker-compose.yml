@@ -1,0 +1,125 @@
+
+version: '3.3'
+services:
+  backend1:
+    image: polarlightning/bitcoind:24.0
+    container_name: polar-n3-backend1
+    environment:
+      USERID: ${USERID:-1000}
+      GROUPID: ${GROUPID:-1000}
+    hostname: backend1
+    command: >-
+      bitcoind 
+      -server=1 
+      -regtest=1
+      -rpcuser=polaruser
+      -rpcpassword=polarpass
+      -debug=1 
+      -zmqpubrawblock=tcp://0.0.0.0:28334
+      -zmqpubrawtx=tcp://0.0.0.0:28335 
+      -zmqpubhashblock=tcp://0.0.0.0:28336
+      -txindex=1 
+      -dnsseed=0 
+      -upnp=0 
+      -rpcbind=0.0.0.0 
+      -rpcallowip=0.0.0.0/0
+      -rpcport=18443 
+      -rest 
+      -listen=1 
+      -listenonion=0 
+      -fallbackfee=0.0002
+      -blockfilterindex=1 
+      -peerblockfilters=1
+    volumes:
+      - /mnt/data/bitcoind/backend1:/home/bitcoin/.bitcoin
+    expose:
+      - '18443'
+      - '18444'
+      - '28334'
+      - '28335'
+    ports:
+      - '18443:18443'
+      - '19444:18444'
+      - '28334:28334'
+      - '29335:28335'
+    secrets:
+      - btc_user
+      - btc_pass
+  alice:
+    depends_on: 
+      - backend1
+    image: polarlightning/lnd:2022.12.28-master
+    container_name: polar-n3-alice
+    environment:
+      USERID: ${USERID:-1000}
+      GROUPID: ${GROUPID:-1000}
+    hostname: alice
+    command: >-
+      lnd 
+      --noseedbackup 
+      --trickledelay=5000 
+      --alias=alice 
+      --externalip=alice
+      --tlsextradomain=alice 
+      --tlsextradomain=polar-n3-alice
+      --listen=0.0.0.0:9735 
+      --rpclisten=0.0.0.0:10009 
+      --restlisten=0.0.0.0:8080
+      --bitcoin.active 
+      --bitcoin.regtest 
+      --bitcoin.node=bitcoind
+      --bitcoind.rpchost=polar-n3-backend1 
+      --bitcoind.rpcuser=polaruser
+      --bitcoind.rpcpass=polarpass
+      --bitcoind.zmqpubrawblock=tcp://polar-n3-backend1:28334
+      --bitcoind.zmqpubrawtx=tcp://polar-n3-backend1:28335
+    restart: always
+    volumes:
+      - /mnt/data/lnd/alice:/home/lnd/.lnd
+    expose:
+      - '8080'
+      - '10009'
+      - '9735'
+    ports:
+      - '8081:8080'
+      - '10001:10009'
+      - '9735:9735'
+    secrets:
+      - btc_user
+      - btc_pass
+  alice-taro:
+    depends_on:
+      - alice
+    image: polarlightning/tarod:2022.12.28-master
+    container_name: polar-n3-alice-taro
+    environment:
+      USERID: ${USERID:-1000}
+      GROUPID: ${GROUPID:-1000}
+    hostname: alice-taro
+    command: >-
+      tarod 
+      --network=regtest 
+      --debuglevel=debug 
+      --tlsextradomain=alice-taro
+      --tlsextradomain=polar-n3-alice-taro 
+      --rpclisten=0.0.0.0:10029
+      --restlisten=0.0.0.0:8089 
+      --lnd.host=polar-n3-alice:10009
+      --lnd.macaroonpath=/home/taro/.lnd/data/chain/bitcoin/regtest/admin.macaroon
+      --lnd.tlspath=/home/taro/.lnd/tls.cert
+    restart: always
+    volumes:
+      - /mnt/data/lnd/alice:/home/taro/.lnd
+      - /mnt/data/tarod/alice-taro:/home/taro/.taro
+    expose:
+      - '8089'
+      - '10029'
+    ports:
+      - '8289:8089'
+      - '12029:10029'
+
+secrets:
+   btc_user:
+     file: ./secrets/rpcuser.txt
+   btc_pass:
+     file: ./secrets/rpcpassword.txt
